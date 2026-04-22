@@ -2,6 +2,8 @@
 
 A free drawing canvas with brushes, stamps, sparkles, and rainbow colors!
 
+https://seewhatimade.github.io/rainbowpainter.github.io/rainbow_painter.html
+
 ## How to Play
 
 1. **Pick a tool** from the toolbar: Brush, Sparkle Spray, Eraser, or Fill Bucket.
