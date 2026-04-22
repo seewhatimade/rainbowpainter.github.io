@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Rainbow Painter!</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    background: #f0f0f0;
+    font-family: 'Comic Sans MS', 'Chalkboard SE', cursive;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  #toolbar {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    background: rgba(255,255,255,0.95);
+    box-shadow: 0 -2px 12px rgba(0,0,0,0.15);
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+    gap: 6px;
+    z-index: 10;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .tool-group {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    flex-shrink: 0;
+  }
+
+  .separator {
+    width: 2px;
+    height: 36px;
+    background: #ddd;
+    margin: 0 4px;
+    flex-shrink: 0;
+  }
+
+  .tool-btn {
+    width: 48px; height: 48px;
+    border-radius: 12px;
+    border: 3px solid transparent;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    background: #f5f5f5;
+    transition: transform 0.1s, border-color 0.15s;
+    flex-shrink: 0;
+  }
+  .tool-btn:active { transform: scale(0.9); }
+  .tool-btn.active { border-color: #333; background: #e0e0ff; }
+
+  .color-btn {
+    width: 40px; height: 40px;
+    border-radius: 50%;
+    border: 3px solid #fff;
+    cursor: pointer;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+    transition: transform 0.1s;
+    flex-shrink: 0;
+  }
+  .color-btn:active { transform: scale(0.9); }
+  .color-btn.active { border-color: #333; transform: scale(1.15); box-shadow: 0 0 0 2px #333; }
+
+  .size-btn {
+    width: 44px; height: 44px;
+    border-radius: 10px;
+    border: 3px solid transparent;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #f5f5f5;
+    transition: transform 0.1s;
+    flex-shrink: 0;
+  }
+  .size-btn:active { transform: scale(0.9); }
+  .size-btn.active { border-color: #333; background: #e0e0ff; }
+
+  canvas#painting {
+    display: block;
+    width: 100%;
+    height: 100%;
+    cursor: none;
+  }
+  canvas#cursor-layer {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    z-index: 5;
+  }
+
+  #title-bar {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    background: rgba(255,255,255,0.85);
+    padding: 8px 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    z-index: 10;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  }
+  #title-bar h1 {
+    font-size: 24px;
+    background: linear-gradient(90deg, #ff0000, #ff8800, #ffdd00, #00cc00, #0088ff, #8800ff);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  #clear-btn {
+    padding: 8px 18px;
+    font-size: 18px;
+    font-family: inherit;
+    background: #ff6b6b;
+    color: white;
+    border: none;
+    border-radius: 20px;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+  }
+  #clear-btn:active { transform: scale(0.95); }
+
+  #save-btn {
+    padding: 8px 18px;
+    font-size: 18px;
+    font-family: inherit;
+    background: #4ecdc4;
+    color: white;
+    border: none;
+    border-radius: 20px;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+  }
+  #save-btn:active { transform: scale(0.95); }
+</style>
+</head>
+<body>
+
+<div id="title-bar">
+  <h1>Rainbow Painter!</h1>
+  <div style="display:flex; gap:8px;">
+    <button id="save-btn">Save</button>
+    <button id="clear-btn">New</button>
+  </div>
+</div>
+
+<canvas id="painting"></canvas>
+<canvas id="cursor-layer"></canvas>
+
+<div id="toolbar">
+  <!-- Brush tools -->
+  <div class="tool-group" id="tools"></div>
+  <div class="separator"></div>
+  <!-- Colors -->
+  <div class="tool-group" id="colors"></div>
+  <div class="separator"></div>
+  <!-- Sizes -->
+  <div class="tool-group" id="sizes"></div>
+  <div class="separator"></div>
+  <!-- Stamps -->
+  <div class="tool-group" id="stamps"></div>
+</div>
+
+<script>
+const canvas = document.getElementById('painting');
+const ctx = canvas.getContext('2d');
+
+let W, H;
+function resize() {
+  // Save current drawing
+  const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  // Fill white
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, W, H);
+  // Restore drawing
+  ctx.putImageData(imgData, 0, 0);
+}
+
+function initCanvas() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, W, H);
+}
+initCanvas();
+window.addEventListener('resize', resize);
+
+// --- Color palette ---
+const PALETTE = [
+  '#ff0000', '#ff5500', '#ff8800', '#ffcc00', '#ffee00',
+  '#88dd00', '#00bb00', '#00ccaa', '#00aaff', '#0055ff',
+  '#6633ff', '#aa00ff', '#ff00cc', '#ff66aa',
+  '#ffffff', '#aaaaaa', '#555555', '#000000',
+  '#8B4513', '#ffd1a3',
+];
+
+// Rainbow mode: special cycling color
+const RAINBOW_ID = 'rainbow';
+
+// --- Brush sizes ---
+const SIZES = [
+  { label: 'S', size: 6 },
+  { label: 'M', size: 16 },
+  { label: 'L', size: 30 },
+  { label: 'XL', size: 50 },
+];
+
+// --- Tools ---
+const TOOL_BRUSH = 'brush';
+const TOOL_SPRAY = 'spray';
+const TOOL_ERASER = 'eraser';
+const TOOL_STAMP = 'stamp';
+const TOOL_FILL = 'fill';
+
+const TOOLS = [
+  { id: TOOL_BRUSH, icon: '\u{1F58C}\uFE0F', label: 'Brush' },
+  { id: TOOL_SPRAY, icon: '\u{2728}', label: 'Sparkle' },
+  { id: TOOL_ERASER, icon: '\u{1F9F9}', label: 'Eraser' },
+  { id: TOOL_FILL, icon: '\u{1FAA3}', label: 'Fill' },
+];
+
+// --- Stamps ---
+const STAMPS = [
+  '\u{2B50}', '\u{2764}\uFE0F', '\u{1F33B}', '\u{1F308}', '\u{1F98B}',
+  '\u{1F31F}', '\u{1F338}', '\u{1F984}', '\u{1F431}', '\u{1F436}',
+  '\u{1F33A}', '\u{2601}\uFE0F', '\u{2600}\uFE0F', '\u{1F319}', '\u{1F352}',
+  '\u{1F370}', '\u{1F680}', '\u{1F47B}',
+];
+
+// --- State ---
+let currentTool = TOOL_BRUSH;
+let currentColor = '#ff0000';
+let currentSize = 16;
+let currentStamp = STAMPS[0];
+let isRainbow = false;
+let rainbowHue = 0;
+let drawing = false;
+let lastX = 0, lastY = 0;
+
+// --- Build toolbar ---
+const toolsEl = document.getElementById('tools');
+const colorsEl = document.getElementById('colors');
+const sizesEl = document.getElementById('sizes');
+const stampsEl = document.getElementById('stamps');
+
+// Tools
+TOOLS.forEach(t => {
+  const btn = document.createElement('div');
+  btn.className = 'tool-btn' + (t.id === currentTool ? ' active' : '');
+  btn.textContent = t.icon;
+  btn.title = t.label;
+  btn.dataset.tool = t.id;
+  btn.addEventListener('click', () => selectTool(t.id));
+  toolsEl.appendChild(btn);
+});
+
+// Rainbow button
+const rbBtn = document.createElement('div');
+rbBtn.className = 'color-btn';
+rbBtn.title = 'Rainbow';
+rbBtn.style.background = 'conic-gradient(red, orange, yellow, green, blue, purple, red)';
+rbBtn.dataset.color = RAINBOW_ID;
+rbBtn.addEventListener('click', () => selectColor(RAINBOW_ID));
+colorsEl.appendChild(rbBtn);
+
+// Color buttons
+PALETTE.forEach(c => {
+  const btn = document.createElement('div');
+  btn.className = 'color-btn' + (c === currentColor ? ' active' : '');
+  btn.style.background = c;
+  if (c === '#ffffff') btn.style.border = '3px solid #ccc';
+  btn.dataset.color = c;
+  btn.addEventListener('click', () => selectColor(c));
+  colorsEl.appendChild(btn);
+});
+
+// Size buttons
+SIZES.forEach(s => {
+  const btn = document.createElement('div');
+  btn.className = 'size-btn' + (s.size === currentSize ? ' active' : '');
+  btn.dataset.size = s.size;
+  btn.addEventListener('click', () => selectSize(s.size));
+  // Draw a dot to show size
+  const dot = document.createElement('div');
+  dot.style.width = Math.min(s.size, 30) + 'px';
+  dot.style.height = Math.min(s.size, 30) + 'px';
+  dot.style.borderRadius = '50%';
+  dot.style.background = '#333';
+  btn.appendChild(dot);
+  sizesEl.appendChild(btn);
+});
+
+// Stamp buttons
+STAMPS.forEach(s => {
+  const btn = document.createElement('div');
+  btn.className = 'tool-btn' + (currentTool === TOOL_STAMP && s === currentStamp ? ' active' : '');
+  btn.textContent = s;
+  btn.dataset.stamp = s;
+  btn.addEventListener('click', () => {
+    currentStamp = s;
+    selectTool(TOOL_STAMP);
+  });
+  stampsEl.appendChild(btn);
+});
+
+function selectTool(id) {
+  currentTool = id;
+  document.querySelectorAll('#tools .tool-btn').forEach(b => b.classList.toggle('active', b.dataset.tool === id));
+  document.querySelectorAll('#stamps .tool-btn').forEach(b => b.classList.toggle('active', id === TOOL_STAMP && b.dataset.stamp === currentStamp));
+  // cursor is drawn on the cursor-layer canvas
+}
+
+function selectColor(c) {
+  if (c === RAINBOW_ID) {
+    isRainbow = true;
+    currentColor = '#ff0000';
+  } else {
+    isRainbow = false;
+    currentColor = c;
+  }
+  document.querySelectorAll('#colors .color-btn').forEach(b => b.classList.toggle('active', b.dataset.color === c));
+}
+
+function selectSize(s) {
+  currentSize = s;
+  document.querySelectorAll('#sizes .size-btn').forEach(b => b.classList.toggle('active', Number(b.dataset.size) === s));
+}
+
+function getColor() {
+  if (isRainbow) {
+    rainbowHue = (rainbowHue + 2) % 360;
+    return `hsl(${rainbowHue}, 90%, 55%)`;
+  }
+  return currentColor;
+}
+
+// --- Drawing ---
+function getPos(e) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  if (e.touches) {
+    return { x: (e.touches[0].clientX - rect.left) * scaleX, y: (e.touches[0].clientY - rect.top) * scaleY };
+  }
+  return { x: (e.clientX - rect.left) * scaleX, y: (e.clientY - rect.top) * scaleY };
+}
+
+function startDraw(e) {
+  e.preventDefault();
+  const pos = getPos(e);
+
+  if (currentTool === TOOL_FILL) {
+    floodFill(Math.round(pos.x), Math.round(pos.y), getColor());
+    return;
+  }
+
+  if (currentTool === TOOL_STAMP) {
+    drawStamp(pos.x, pos.y);
+    return;
+  }
+
+  drawing = true;
+  lastX = pos.x;
+  lastY = pos.y;
+
+  // Draw a dot at the start
+  if (currentTool === TOOL_BRUSH || currentTool === TOOL_ERASER) {
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, currentSize / 2, 0, Math.PI * 2);
+    ctx.fillStyle = currentTool === TOOL_ERASER ? '#ffffff' : getColor();
+    ctx.fill();
+  }
+  if (currentTool === TOOL_SPRAY) {
+    sprayAt(pos.x, pos.y);
+  }
+}
+
+function moveDraw(e) {
+  if (!drawing) return;
+  e.preventDefault();
+  const pos = getPos(e);
+
+  if (currentTool === TOOL_BRUSH || currentTool === TOOL_ERASER) {
+    ctx.beginPath();
+    ctx.moveTo(lastX, lastY);
+    ctx.lineTo(pos.x, pos.y);
+    ctx.strokeStyle = currentTool === TOOL_ERASER ? '#ffffff' : getColor();
+    ctx.lineWidth = currentSize;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+  }
+
+  if (currentTool === TOOL_SPRAY) {
+    sprayAt(pos.x, pos.y);
+  }
+
+  lastX = pos.x;
+  lastY = pos.y;
+}
+
+function endDraw(e) {
+  drawing = false;
+}
+
+canvas.addEventListener('mousedown', startDraw);
+canvas.addEventListener('mousemove', moveDraw);
+canvas.addEventListener('mouseup', endDraw);
+canvas.addEventListener('mouseleave', endDraw);
+canvas.addEventListener('touchstart', startDraw, { passive: false });
+canvas.addEventListener('touchmove', moveDraw, { passive: false });
+canvas.addEventListener('touchend', endDraw);
+
+// --- Spray tool ---
+function sprayAt(x, y) {
+  const density = currentSize * 2;
+  const radius = currentSize;
+  for (let i = 0; i < density; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const dist = Math.random() * radius;
+    const px = x + Math.cos(angle) * dist;
+    const py = y + Math.sin(angle) * dist;
+    const sparkSize = 1 + Math.random() * 3;
+    ctx.beginPath();
+    ctx.arc(px, py, sparkSize, 0, Math.PI * 2);
+    ctx.fillStyle = getColor();
+    ctx.fill();
+  }
+}
+
+// --- Stamp tool ---
+function drawStamp(x, y) {
+  const size = currentSize * 2.5;
+  ctx.save();
+  ctx.font = `${size}px serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(currentStamp, x, y);
+  ctx.restore();
+}
+
+// --- Flood fill ---
+function floodFill(startX, startY, fillColor) {
+  if (startX < 0 || startX >= W || startY < 0 || startY >= H) return;
+
+  const imageData = ctx.getImageData(0, 0, W, H);
+  const data = imageData.data;
+  const idx = (startY * W + startX) * 4;
+  const targetR = data[idx], targetG = data[idx+1], targetB = data[idx+2];
+
+  // Parse fill color
+  const tmp = document.createElement('canvas');
+  tmp.width = tmp.height = 1;
+  const tmpCtx = tmp.getContext('2d');
+  tmpCtx.fillStyle = fillColor;
+  tmpCtx.fillRect(0, 0, 1, 1);
+  const fc = tmpCtx.getImageData(0, 0, 1, 1).data;
+  const fillR = fc[0], fillG = fc[1], fillB = fc[2];
+
+  if (targetR === fillR && targetG === fillG && targetB === fillB) return;
+
+  const tolerance = 30;
+  function matches(i) {
+    return Math.abs(data[i] - targetR) <= tolerance &&
+           Math.abs(data[i+1] - targetG) <= tolerance &&
+           Math.abs(data[i+2] - targetB) <= tolerance;
+  }
+
+  const stack = [[startX, startY]];
+  const visited = new Uint8Array(W * H);
+
+  while (stack.length > 0) {
+    const [x, y] = stack.pop();
+    const pi = y * W + x;
+    if (x < 0 || x >= W || y < 0 || y >= H) continue;
+    if (visited[pi]) continue;
+    const i = pi * 4;
+    if (!matches(i)) continue;
+
+    visited[pi] = 1;
+    data[i] = fillR;
+    data[i+1] = fillG;
+    data[i+2] = fillB;
+    data[i+3] = 255;
+
+    stack.push([x+1, y], [x-1, y], [x, y+1], [x, y-1]);
+  }
+
+  ctx.putImageData(imageData, 0, 0);
+}
+
+// --- Clear / New canvas ---
+document.getElementById('clear-btn').addEventListener('click', () => {
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, W, H);
+});
+
+// --- Save drawing ---
+document.getElementById('save-btn').addEventListener('click', () => {
+  const link = document.createElement('a');
+  link.download = 'my_painting.png';
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+});
+
+// Prevent toolbar touches from drawing
+document.getElementById('toolbar').addEventListener('touchstart', e => e.stopPropagation(), { passive: true });
+document.getElementById('title-bar').addEventListener('touchstart', e => e.stopPropagation(), { passive: true });
+
+// --- Custom paintbrush cursor ---
+const cursorCanvas = document.getElementById('cursor-layer');
+const cctx = cursorCanvas.getContext('2d');
+let cursorX = -100, cursorY = -100;
+let cursorVisible = true;
+
+function resizeCursor() {
+  cursorCanvas.width = window.innerWidth;
+  cursorCanvas.height = window.innerHeight;
+}
+resizeCursor();
+window.addEventListener('resize', resizeCursor);
+
+document.addEventListener('mousemove', e => { cursorX = e.clientX; cursorY = e.clientY; cursorVisible = true; });
+document.addEventListener('touchmove', e => { cursorX = e.touches[0].clientX; cursorY = e.touches[0].clientY; cursorVisible = true; }, { passive: true });
+document.addEventListener('touchend', () => { cursorVisible = false; });
+document.addEventListener('mouseleave', () => { cursorVisible = false; });
+document.addEventListener('mouseenter', () => { cursorVisible = true; });
+
+function drawCursor() {
+  cctx.clearRect(0, 0, cursorCanvas.width, cursorCanvas.height);
+  if (!cursorVisible || cursorX < -50) { requestAnimationFrame(drawCursor); return; }
+
+  const x = cursorX;
+  const y = cursorY;
+
+  cctx.save();
+  cctx.translate(x, y);
+  cctx.rotate(-0.6); // tilted like holding a brush
+
+  // --- Shadow for contrast on any background ---
+  cctx.shadowColor = 'rgba(0,0,0,0.4)';
+  cctx.shadowBlur = 6;
+  cctx.shadowOffsetX = 2;
+  cctx.shadowOffsetY = 2;
+
+  // --- Handle (long wooden stick) ---
+  // Outer handle
+  cctx.beginPath();
+  cctx.moveTo(-8, -4);
+  cctx.lineTo(-52, -32);
+  cctx.lineTo(-48, -36);
+  cctx.lineTo(-4, -8);
+  cctx.closePath();
+  const handleGrad = cctx.createLinearGradient(-8, -4, -50, -34);
+  handleGrad.addColorStop(0, '#c8a050');
+  handleGrad.addColorStop(0.3, '#f0d080');
+  handleGrad.addColorStop(0.7, '#d4a840');
+  handleGrad.addColorStop(1, '#a07828');
+  cctx.fillStyle = handleGrad;
+  cctx.fill();
+  cctx.strokeStyle = '#806020';
+  cctx.lineWidth = 1.2;
+  cctx.stroke();
+
+  cctx.shadowColor = 'transparent';
+
+  // Handle highlight line
+  cctx.beginPath();
+  cctx.moveTo(-10, -7);
+  cctx.lineTo(-46, -34);
+  cctx.strokeStyle = 'rgba(255,255,255,0.4)';
+  cctx.lineWidth = 1.5;
+  cctx.stroke();
+
+  // --- Ferrule (metal band) ---
+  cctx.beginPath();
+  cctx.moveTo(-8, -4);
+  cctx.lineTo(-4, -8);
+  cctx.lineTo(2, -2);
+  cctx.lineTo(-2, 2);
+  cctx.closePath();
+  cctx.fillStyle = '#b0b8c0';
+  cctx.fill();
+  cctx.strokeStyle = '#808890';
+  cctx.lineWidth = 1;
+  cctx.stroke();
+
+  // --- Bristles (tip at 0,0 — the paint point) ---
+  // Get the display color for the bristle tips
+  const bristleColor = isRainbow
+    ? `hsl(${rainbowHue}, 90%, 55%)`
+    : currentTool === TOOL_ERASER ? '#ffffff' : currentColor;
+
+  // Bristle base shape
+  cctx.beginPath();
+  cctx.moveTo(-2, 2);
+  cctx.quadraticCurveTo(4, 6, 2, 10);
+  cctx.lineTo(0, 12);
+  cctx.lineTo(-2, 10);
+  cctx.quadraticCurveTo(-6, 4, 2, -2);
+  cctx.closePath();
+  // Gradient from natural bristle to paint color
+  const bristleGrad = cctx.createLinearGradient(-2, 2, 0, 12);
+  bristleGrad.addColorStop(0, '#e8c878');
+  bristleGrad.addColorStop(0.4, bristleColor);
+  bristleGrad.addColorStop(1, bristleColor);
+  cctx.fillStyle = bristleGrad;
+  cctx.fill();
+
+  // Bristle strands
+  cctx.strokeStyle = 'rgba(0,0,0,0.15)';
+  cctx.lineWidth = 0.6;
+  for (let i = 0; i < 5; i++) {
+    const t = i / 4;
+    cctx.beginPath();
+    cctx.moveTo(-1 + t * 3, 2 + t);
+    cctx.lineTo(-1.5 + t * 3, 10 + t);
+    cctx.stroke();
+  }
+
+  // --- White outline around entire brush for visibility ---
+  // We redraw the silhouette with a thick white stroke behind
+  // (Already handled by shadow above, but add a bright dot at the tip)
+
+  // Bright paint dot at the very tip (the contact point)
+  cctx.beginPath();
+  cctx.arc(0, 11, 3, 0, Math.PI * 2);
+  cctx.fillStyle = bristleColor;
+  cctx.fill();
+  cctx.strokeStyle = '#fff';
+  cctx.lineWidth = 2;
+  cctx.stroke();
+
+  // --- Size indicator ring ---
+  cctx.restore();
+
+  // Draw a faint circle showing the brush size at cursor position
+  cctx.save();
+  cctx.beginPath();
+  const rect = canvas.getBoundingClientRect();
+  const displaySize = currentSize / (canvas.width / rect.width);
+  cctx.arc(x, y, displaySize / 2, 0, Math.PI * 2);
+  cctx.strokeStyle = 'rgba(0,0,0,0.3)';
+  cctx.lineWidth = 1.5;
+  cctx.setLineDash([4, 4]);
+  cctx.stroke();
+  cctx.strokeStyle = 'rgba(255,255,255,0.5)';
+  cctx.lineDashOffset = 4;
+  cctx.stroke();
+  cctx.restore();
+
+  requestAnimationFrame(drawCursor);
+}
+drawCursor();
+</script>
+</body>
+</html>
