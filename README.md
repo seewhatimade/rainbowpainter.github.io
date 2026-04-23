@@ -2,7 +2,7 @@
 
 A free drawing canvas with brushes, stamps, sparkles, and rainbow colors!
 
-https://seewhatimade.github.io/rainbowpainter.github.io/rainbow_painter.html
+https://seewhatimade.github.io/rainbowpainter.github.io/
 
 ## How to Play
 
